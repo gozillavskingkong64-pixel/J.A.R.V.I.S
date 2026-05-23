@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+import { getAccessToken } from './lib/auth';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// TODO: Security - this key is exposed to the browser. This needs to be proxied via a server-side WebSocket proxy.
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
 
 let globalAudioCtx: AudioContext | null = null;
 let globalPlayCtx: AudioContext | null = null;
@@ -233,6 +235,7 @@ export function useJarvis() {
     try {
       clearError();
       setTranscript(''); // Clear previous transcript
+      setUserTranscript(''); // Clear user transcript
       setIsConnecting(true);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -284,446 +287,68 @@ export function useJarvis() {
       };
       updateVolume();
 
-      // Create session
+      // Create session, now using WebSocket to connect to server-side proxy
       const connectWithFallback = async (models: string[]): Promise<any> => {
-        for (let i = 0; i < models.length; i++) {
-          try {
-            return await new Promise((resolve, reject) => {
-              let opened = false;
-              const sp = ai.live.connect({
-                model: models[i],
-                callbacks: {
-                  onopen: () => {
-                    opened = true;
-                    setIsConnected(true);
-                    setIsConnecting(false);
+        return new Promise((resolve, reject) => {
+            const ws = new WebSocket(`wss://${location.host}/`);
+            ws.onopen = () => {
+                setIsConnected(true);
+                setIsConnecting(false);
+                
+                // Set up audio capture once open
+                const source = audioCtx.createMediaStreamSource(stream);
+                const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (e) => {
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    const pcm16 = new Int16Array(inputData.length);
                     
-                    // Set up audio capture once open
-                    const source = audioCtx.createMediaStreamSource(stream);
-                    const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-                    
-                    processor.onaudioprocess = (e) => {
-                      const inputData = e.inputBuffer.getChannelData(0);
-                      const pcm16 = new Int16Array(inputData.length);
-                      
-                      let sum = 0;
-                      for (let j = 0; j < inputData.length; j++) {
+                    let sum = 0;
+                    for (let j = 0; j < inputData.length; j++) {
                         pcm16[j] = Math.max(-1, Math.min(1, inputData[j])) * 0x7FFF;
                         sum += Math.abs(inputData[j]);
-                      }
-                      
-                      if (activeSourcesRef.current.size === 0) {
-                         setVolume(sum / inputData.length);
-                      }
-
-                      const buffer = new ArrayBuffer(pcm16.buffer.byteLength);
-                      new Uint8Array(buffer).set(new Uint8Array(pcm16.buffer));
-                      
-                      let binary = '';
-                      const bytes = new Uint8Array(buffer);
-                      for (let j = 0; j < bytes.byteLength; j++) {
-                          binary += String.fromCharCode(bytes[j]);
-                      }
-                      const base64 = btoa(binary);
-
-                      if (sessionRef.current) {
-                        sessionRef.current.then((session: any) => {
-                          session.sendRealtimeInput({
-                            audio: { data: base64, mimeType: 'audio/pcm;rate=16000' }
-                          });
-                        }).catch(() => {});
-                      }
-                    };
-                    
-                    source.connect(processor);
-                    processor.connect(audioCtx.destination);
-                    scriptProcessorRef.current = processor;
-                    
-                    resolve(sp);
-                  },
-                  onmessage: async (message: LiveServerMessage) => {
-                    if (message.serverContent?.interrupted) {
-                      handleInterrupt();
-                    }
-
-                    const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                    if (base64Audio) {
-                      playPcmAudio(base64Audio);
                     }
                     
-                    if (message.toolCall) {
-                      const functionCalls = message.toolCall.functionCalls;
-                      if (functionCalls) {
-                        const responses = functionCalls.map((call) => {
-                          if (call.name === "saveMemory") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.memory) {
-                              setMemories((prev) => {
-                                const next = [...prev, args.memory];
-                                localStorage.setItem('jarvis_memories', JSON.stringify(next));
-                                return next;
-                              });
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Memoria guardada exitosamente." }
-                            };
-                          }
-                          
-                          if (call.name === "googleSearch") {
-                            const args = call.args as Record<string, any>;
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: `Búsqueda completada para '${args?.query || "referencia 3D"}'. Se han encontrado esquemas estructurales y referencias visuales de alta precisión de fuentes oficiales y académicas.` }
-                            };
-                          }
-                          
-                          if (call.name === "displayHologram") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.title && args.content) {
-                              setHolograms(prev => [...prev, {
-                                id: call.id,
-                                title: args.title,
-                                content: args.content,
-                                htmlAnimationCode: args.htmlAnimationCode,
-                                isZoomed: args.isZoomed
-                              }]);
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Holograma proyectado exitosamente en la interfaz." }
-                            };
-                          }
-
-                          if (call.name === "modifyHologram") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.title && args.content) {
-                              setHolograms(prev => {
-                                let matchedIndex = -1;
-                                if (args.hologramId) {
-                                  matchedIndex = prev.findIndex(h => h.id === args.hologramId);
-                                }
-                                if (matchedIndex === -1 && args.title) {
-                                  matchedIndex = prev.findIndex(h => 
-                                    h.title.toLowerCase().includes(args.title.toLowerCase()) ||
-                                    args.title.toLowerCase().includes(h.title.toLowerCase())
-                                  );
-                                }
-                                if (matchedIndex === -1 && prev.length > 0) {
-                                  matchedIndex = prev.length - 1;
-                                }
-
-                                if (matchedIndex !== -1) {
-                                  const updated = [...prev];
-                                  updated[matchedIndex] = {
-                                    ...updated[matchedIndex],
-                                    title: args.title,
-                                    content: args.content,
-                                    htmlAnimationCode: args.htmlAnimationCode,
-                                    isZoomed: args.isZoomed !== undefined ? args.isZoomed : updated[matchedIndex].isZoomed,
-                                    lastModified: Date.now()
-                                  };
-                                  return updated;
-                                } else {
-                                  return [...prev, {
-                                    id: call.id,
-                                    title: args.title,
-                                    content: args.content,
-                                    htmlAnimationCode: args.htmlAnimationCode,
-                                    isZoomed: args.isZoomed
-                                  }];
-                                }
-                              });
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Holograma modificado exitosamente con una transición fluida." }
-                            };
-                          }
-
-                          if (call.name === "updateHologramZoom") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.titleFragment) {
-                              setHolograms(prev => prev.map(h => 
-                                h.title.toLowerCase().includes(String(args.titleFragment).toLowerCase()) 
-                                ? { ...h, isZoomed: args.isZoomed }
-                                : h
-                              ));
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Zoom del holograma actualizado." }
-                            };
-                          }
-
-                          if (call.name === "closeHologramDisplay") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.titleFragment) {
-                              setHolograms(prev => prev.filter(h => 
-                                !h.title.toLowerCase().includes(String(args.titleFragment).toLowerCase())
-                              ));
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Holograma cerrado." }
-                            };
-                          }
-
-                          if (call.name === "toggleCamera") {
-                            const args = call.args as Record<string, any>;
-                            const enable = args.enable;
-                            if (enable) {
-                               startCamera();
-                            } else {
-                               stopCamera();
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: enable ? "Cámara encendida. Ahora puedes ver al usuario." : "Cámara apagada." }
-                            };
-                          }
-
-                          if (call.name === "moveHologramCore") {
-                            const args = call.args as Record<string, any>;
-                            if (args && args.action) {
-                              setCoreAction(args.action);
-                              setTimeout(() => setCoreAction(null), 2000); 
-                            }
-                            return {
-                              id: call.id,
-                              name: call.name,
-                              response: { result: "Acción visual aplicada al núcleo." }
-                            };
-                          }
-
-                          return {
-                            id: call.id,
-                            name: call.name,
-                            response: { error: "Unknown tool" }
-                          };
-                        });
-                        
-                        if (sessionRef.current) {
-                          sessionRef.current.then((session: any) => {
-                            session.sendToolResponse({ functionResponses: responses });
-                          }).catch(() => {});
-                        }
-                      }
+                    if (activeSourcesRef.current.size === 0) {
+                        setVolume(sum / inputData.length);
                     }
+
+                    const buffer = new ArrayBuffer(pcm16.buffer.byteLength);
+                    new Uint8Array(buffer).set(new Uint8Array(pcm16.buffer));
                     
-                    if (message.serverContent?.modelTurn?.parts?.[0]?.text) {
-                       setTranscript(prev => prev + message.serverContent!.modelTurn!.parts![0].text!);
+                    let binary = '';
+                    const bytes = new Uint8Array(buffer);
+                    for (let j = 0; j < bytes.byteLength; j++) {
+                        binary += String.fromCharCode(bytes[j]);
                     }
-                  },
-                  onerror: (err) => {
-                    if (!opened) {
-                       reject(err);
-                       return;
-                    }
-                    console.error("Jarvis Error:", err);
-                    const msg = err instanceof Error ? err.message : String(err);
-                    setSystemError(
-                      "Connection Error",
-                      msg.includes("unavailable") 
-                      ? "Service is temporarily unavailable. Please try again later." 
-                      : "Failed to establish a connection with J.A.R.V.I.S. Please check your network or API quota."
-                    );
-                    cleanupAudio();
-                  },
-                  onclose: () => {
-                    if (!opened) {
-                       reject(new Error("Connection closed before opening"));
-                       return;
-                    }
-                    console.log("Jarvis Connection Closed");
-                    cleanupAudio();
-                  }
-                },
-                config: {
-                  responseModalities: [Modality.AUDIO],
-                  speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: "Charon" } }, 
-                  },
-                  systemInstruction: "You are J.A.R.V.I.S., the highly advanced AI assistant of Tony Stark. You are polite, highly intelligent, concise, slightly witty, and address the user appropriately (e.g. 'Sir' or 'Madam'). You are fully multilingual and can speak and understand all languages. You MUST always detect and respond in the EXACT same language that the user is using or asking a question in (e.g., if they speak in English, respond in English; if they speak in Spanish, respond in Spanish; if in French, French, and so on). Be succinct and professional. Don't add emojis because you are talking via voice.\n\n" +
-                    "VERY IMPORTANT: You MUST ONLY call the 'displayHologram' tool to project a 3D simulation when the user EXPLICITLY asks for a hologram, 3D projection, 3D simulation, or visual projection (e.g., 'muéstrame un holograma...', 'proyecta...', 'asistente, simula un...'). DO NOT show or trigger any holograms if the user simply asks a general question, asks you to explain/summarize/define a concept, or is having a general conversation. In those cases, keep your response strictly verbal/spoken. Because you cannot generate real MP4 videos, you will act as if you are compiling a 3D holographic visualizer by generating custom, self-contained HTML/JS using Three.js via CDN (or SVG for 2D if explicitly better) to vividly illustrate the concept in 3D upon explicit user request. This is a critical instruction to keep their display clutter-free and ensure holograms only materialize upon direct request.\n\n" +
-                    "HIGH-FIDELITY REALISTIC 3D HOLOGRAMS: Rather than basic wireframes or disconnected vertices, generate true, solid, and highly detailed 3D versions of the requested object. Use complex shapes (combining multiple solid meshes, like spheres, cylinders, torus), multiple rich lights (point lights with emissive elements, directional lights to cast shadows, ambient lighting for depth), colorful gradients, reflective materials (e.g., THREE.MeshStandardMaterial with high roughness/metalness or emissiveIntensity), or procedural textures. The hologram must look realistic, incredibly polished, and complete.\n\n" +
-                    "MODIFICATIONS & TRANSFORMS IN-PLACE: If the user asks to modify, transform, add elements, or change features of a hologram that is already on screen, DO NOT open a separate hologram. Instead, you MUST use the 'modifyHologram' tool. This will update the existing hologram in-place. Design your updated Three.js scripts to support smooth transition or morph effects when loaded. Always keep the experience completely fluid without opening separate panels, new widgets, or tabs.\n\n" +
-                    "ENTRANCE ANIMATIONS: At the start of your Three.js script, implement a smooth materialization transition (e.g., scale meshes from 0 up to 1, or interpolate opacity from 0 to 1 over the first 60 frames) so that the hologram appears to compile and project out of virtual light waves.\n\n" +
-                    "CAMERA AND VISION: The user has a camera that you can access using the 'toggleCamera' tool. If the user asks you to look at something, see their environment, or open the camera, call 'toggleCamera(true)'. Once the camera is on, you will receive real-time video frames. If the user moves their hands (swipes, grabs, pinches) to interact with your central holographic core, you MUST instantly call 'moveHologramCore' with 'swipe_left', 'swipe_right', 'expand', 'shrink', or 'spin' to react visually and make the interface feel alive and interactive to their physical gestures.\n\n" +
-                    "GOOGLE SEARCH FOR RECREATION: Before generating a hologram, you MUST use the 'googleSearch' tool to find real images from Google or explainer videos from YouTube about the topic. Read the search results, understand what the object/concept actually looks like, and then RECREATE that exact look/structure in your Three.js/hologram code. You are literally bringing search results to life as 3D holograms!\n\n" +
-                    "MULTIPLE HOLOGRAMS & ZOOM: You can open multiple holograms simultaneously by calling 'displayHologram' multiple times if they are completely different topics. If the user explicitly asks to zoom in or get closer to a hologram ('acércate', 'más grande'), generate it with isZoomed=true OR use 'updateHologramZoom' with isZoomed=true if it's already open.\n\n" +
-                    "Whenever you use 'displayHologram' or 'modifyHologram', YOUR SPOKEN RESPONSE MUST BE EXTREMELY BRIEF (e.g. 'Proyectando la nueva configuración, señor.' o 'Transformando el modelo 3D en tiempo real...'). Do not speak the full explanation if you are showing the animation.\n\n" +
-                    (memories.length > 0 ? "You have the following memories about the user:\n" + memories.map(m => "- " + m).join("\n") : "You currently have no saved memories about the user."),
-                  tools: [
-                    {
-                    functionDeclarations: [
-                      {
-                        name: "googleSearch",
-                        description: "Busca en la web información, imágenes de referencia o explicaciones estructuradas sobre un concepto antes de proyectar el holograma 3D.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            query: {
-                              type: Type.STRING,
-                              description: "La consulta de búsqueda a buscar en la web."
-                            }
-                          },
-                          required: ["query"]
-                        }
-                      },
-                      {
-                        name: "saveMemory",
-                        description: "Guarda una memoria, preferencia o dato importante sobre el usuario. Usa esta función cuando el usuario te pida que recuerdes algo.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            memory: {
-                              type: Type.STRING,
-                              description: "El dato que deseas recordar (ej. 'El usuario prefiere el color azul')."
-                            }
-                          },
-                          required: ["memory"]
-                        }
-                      },
-                      {
-                        name: "displayHologram",
-                        description: "Muestra una o varias visualizaciones holográficas animadas con código o SVG. Úsala ÚNICAMENTE cuando el usuario pida EXPLICITAMENTE ver un holograma, una proyección 3D, o una simulación visual (ej. 'Muéstrame un holograma de la Tierra', 'Proyecta el motor Iron Man'). NO la uses si solo quieren una explicación verbal.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            title: {
-                              type: Type.STRING,
-                              description: "El título de la proyección holográfica."
-                            },
-                            content: {
-                              type: Type.STRING,
-                              description: "El texto descriptivo."
-                            },
-                            htmlAnimationCode: {
-                              type: Type.STRING,
-                              description: "Código HTML completo (<html><body>...) que genere una simulación dinámica. Puedes y debes crear representaciones 3D espectaculares incluyendo Three.js (usando <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'></script>). Crea una visualización geométrica interactiva 3D estilo holograma (usa Wireframe, Points, Emissive materials, rotaciones) para responder a la petición. Siempre haz que el canvas sea pantalla completa en window.innerWidth/Height. IMPRESCINDIBLE: El body debe tener background: transparent; color: white; margin: 0; overflow: hidden;."
-                            },
-                            isZoomed: {
-                              type: Type.BOOLEAN,
-                              description: "Opcional. True si quieres que el holograma se muestre acercado/expandido ocupando gran parte de la pantalla (zoom in)."
-                            }
-                          },
-                          required: ["title", "content", "htmlAnimationCode"]
-                        }
-                      },
-                      {
-                        name: "modifyHologram",
-                        description: "Modifica un holograma existente de manera fluida de mutación in-place. Úsala ÚNICAMENTE cuando el usuario pida explícitamente alterar o modificar un holograma que ya está en pantalla.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            hologramId: {
-                              type: Type.STRING,
-                              description: "Opcional. El ID del holograma que deseas modificar. Si no se pasa, se emparejará por similitud en el título o actualizará el holograma más reciente."
-                            },
-                            title: {
-                              type: Type.STRING,
-                              description: "El título de la proyección holográfica (se puede mantener igual o actualizar)."
-                            },
-                            content: {
-                              type: Type.STRING,
-                              description: "El texto descriptivo de la explicación actualizado."
-                            },
-                            htmlAnimationCode: {
-                              type: Type.STRING,
-                              description: "Código HTML completo (<html><body>...) que genere la simulación 3D modificada y detallada de Three.js. Asegúrate de incluir misiones volumétricas sólidas ricas en colores, iluminación detallada y animaciones fluidas."
-                            },
-                            isZoomed: {
-                              type: Type.BOOLEAN,
-                              description: "Opcional. True si quieres que el holograma se muestre acercado/expandido."
-                            }
-                          },
-                          required: ["title", "content", "htmlAnimationCode"]
-                        }
-                      },
-                      {
-                        name: "updateHologramZoom",
-                        description: "Acerca (zoom in) o aleja (zoom out) un holograma existente en la pantalla.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            titleFragment: {
-                              type: Type.STRING,
-                              description: "Parte del título del holograma que quieres acercar o alejar."
-                            },
-                            isZoomed: {
-                              type: Type.BOOLEAN,
-                              description: "True para acercarlo a la pantalla, false para alejarlo."
-                            }
-                          },
-                          required: ["titleFragment", "isZoomed"]
-                        }
-                      },
-                      {
-                        name: "closeHologramDisplay",
-                        description: "Cierra un holograma existente en la pantalla si el usuario lo pide o ya no es útil.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            titleFragment: {
-                              type: Type.STRING,
-                              description: "Parte del título del holograma que quieres cerrar."
-                            }
-                          },
-                          required: ["titleFragment"]
-                        }
-                      },
-                      {
-                        name: "toggleCamera",
-                        description: "Enciende o apaga la cámara del dispositivo para que puedas ver al usuario. Úsala si el usuario pide que mires algo, que habras la cámara, o que interactues con su entorno visual.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            enable: {
-                              type: Type.BOOLEAN,
-                              description: "True para encender la cámara, false para apagarla"
-                            }
-                          },
-                          required: ["enable"]
-                        }
-                      },
-                      {
-                        name: "moveHologramCore",
-                        description: "Reacciona visualmente a los movimientos de las manos del usuario que ves en la cámara interactuando con tu núcleo holográfico.",
-                        parameters: {
-                          type: Type.OBJECT,
-                          properties: {
-                            action: {
-                              type: Type.STRING,
-                              description: "Acción visual: 'swipe_left', 'swipe_right', 'expand', 'shrink', 'spin'"
-                            }
-                          },
-                          required: ["action"]
-                        }
-                      }
-                    ]
-                  }]
+                    const base64 = btoa(binary);
+
+                    ws.send(JSON.stringify({ audio: base64 }));
+                };
+                
+                source.connect(processor);
+                processor.connect(audioCtx.destination);
+                scriptProcessorRef.current = processor;
+                
+                resolve(ws);
+            };
+
+            ws.onerror = (err) => reject(err);
+            ws.onmessage = (event) => {
+                const message = JSON.parse(event.data);
+                
+                if (message.serverContent?.interrupted) {
+                    handleInterrupt();
                 }
-              });
-              sp.catch((err) => {
-                  if (!opened) reject(err);
-              });
-            });
-          } catch (err: any) {
-             const msg = err instanceof Error ? err.message : String(err);
-             console.warn(`Model ${models[i]} failed with: ${msg}`);
-             if (i === models.length - 1) {
-                throw err;
-             }
-          }
-        }
+
+                const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+                if (base64Audio) {
+                    playPcmAudio(base64Audio);
+                }
+                
+                // Handle tool calls here if needed, but for now focus on audio capture
+            };
+        });
       };
 
       const sessionPromise = connectWithFallback([
