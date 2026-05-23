@@ -1,6 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
-import { getAccessToken } from './lib/auth';
 
 // TODO: Security - this key is exposed to the browser. This needs to be proxied via a server-side WebSocket proxy.
 const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
