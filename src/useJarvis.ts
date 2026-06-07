@@ -76,6 +76,13 @@ export function useJarvis() {
       videoIntervalRef.current = window.setTimeout(sendFrames, 1000);
     } catch (err) {
       console.error("Camera error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("Permission dismissed") || msg.includes("Permission denied") || msg.includes("NotAllowedError") || err instanceof DOMException && err.name === "NotAllowedError") {
+        setSystemError(
+          "Camera Permission Required",
+          "Please allow camera access for J.A.R.V.I.S to see the environment."
+        );
+      }
     }
   };
 
@@ -344,8 +351,217 @@ export function useJarvis() {
                 if (base64Audio) {
                     playPcmAudio(base64Audio);
                 }
+
+                // Handle text transcription synchronization
+                if (message.serverContent?.inputTranscription?.text) {
+                    setUserTranscript(prev => prev + message.serverContent!.inputTranscription!.text! + " ");
+                }
+
+                if (message.serverContent?.outputTranscription?.text) {
+                    setTranscript(prev => prev + message.serverContent!.outputTranscription!.text!);
+                } else if (message.serverContent?.modelTurn?.parts) {
+                    const modelTxt = message.serverContent.modelTurn.parts
+                        .map((part: any) => part.text)
+                        .filter(Boolean)
+                        .join("");
+                    if (modelTxt) {
+                        setTranscript(prev => prev + modelTxt);
+                    }
+                }
                 
-                // Handle tool calls here if needed, but for now focus on audio capture
+                // Handle client-side tool executions
+                if (message.toolCall) {
+                    const functionCalls = message.toolCall.functionCalls;
+                    if (functionCalls) {
+                        const responsesAndPromises = functionCalls.map(async (call: any) => {
+                            if (call.name === "saveMemory") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.memory) {
+                                    setMemories((prev) => {
+                                        const next = [...prev, args.memory];
+                                        localStorage.setItem('jarvis_memories', JSON.stringify(next));
+                                        return next;
+                                    });
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Memoria guardada exitosamente." }
+                                };
+                            }
+                            
+                            if (call.name === "googleSearch") {
+                                const args = call.args as Record<string, any>;
+                                const query = args?.query || "referencia 3D";
+                                try {
+                                    const searchRes = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                                    if (searchRes.ok) {
+                                        const data = await searchRes.json();
+                                        if (data.results && data.results.length > 0) {
+                                            const formattedResults = data.results.map((r: any, idx: number) => 
+                                                `[Fuentes #${idx + 1}] Título: ${r.title}\nURL: ${r.link}\nResumen: ${r.snippet}`
+                                            ).join("\n\n");
+                                            
+                                            return {
+                                                id: call.id,
+                                                name: call.name,
+                                                response: { result: `Resultados reales de búsqueda recuperados para: "${query}":\n\n${formattedResults}\n\nUsa estos datos, enlaces, descripciones, o fórmulas de diseño 3D para proyectar un holograma sumamente fiel y espectacular con Three.js en tu visualizador.` }
+                                            };
+                                        }
+                                    }
+                                } catch (searchErr) {
+                                    console.error("Failed to fetch google search results:", searchErr);
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: `Búsqueda completada para '${query}'. No se retornaron resultados explícitos, pero procede con tu propio entendimiento de diseño 3D para lograr una geometría perfecta.` }
+                                };
+                            }
+                            
+                            if (call.name === "displayHologram") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.title && args.content) {
+                                    setHolograms(prev => [...prev, {
+                                        id: call.id || Math.random().toString(),
+                                        title: args.title,
+                                        content: args.content,
+                                        htmlAnimationCode: args.htmlAnimationCode,
+                                        isZoomed: args.isZoomed
+                                    }]);
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Holograma proyectado exitosamente en la interfaz." }
+                                };
+                            }
+
+                            if (call.name === "modifyHologram") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.title && args.content) {
+                                    setHolograms(prev => {
+                                        let matchedIndex = -1;
+                                        if (args.hologramId) {
+                                            matchedIndex = prev.findIndex(h => h.id === args.hologramId);
+                                        }
+                                        if (matchedIndex === -1 && args.title) {
+                                            matchedIndex = prev.findIndex(h => 
+                                                h.title.toLowerCase().includes(args.title.toLowerCase()) ||
+                                                args.title.toLowerCase().includes(h.title.toLowerCase())
+                                            );
+                                        }
+                                        if (matchedIndex === -1 && prev.length > 0) {
+                                            matchedIndex = prev.length - 1;
+                                        }
+
+                                        if (matchedIndex !== -1) {
+                                            const updated = [...prev];
+                                            updated[matchedIndex] = {
+                                                ...updated[matchedIndex],
+                                                title: args.title,
+                                                content: args.content,
+                                                htmlAnimationCode: args.htmlAnimationCode,
+                                                isZoomed: args.isZoomed !== undefined ? args.isZoomed : updated[matchedIndex].isZoomed,
+                                                lastModified: Date.now()
+                                            };
+                                            return updated;
+                                        } else {
+                                            return [...prev, {
+                                                id: call.id || Math.random().toString(),
+                                                title: args.title,
+                                                content: args.content,
+                                                htmlAnimationCode: args.htmlAnimationCode,
+                                                isZoomed: args.isZoomed
+                                            }];
+                                        }
+                                    });
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Holograma modificado exitosamente con una transición fluida." }
+                                };
+                            }
+
+                            if (call.name === "updateHologramZoom") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.titleFragment) {
+                                    setHolograms(prev => prev.map(h => 
+                                        h.title.toLowerCase().includes(String(args.titleFragment).toLowerCase()) 
+                                        ? { ...h, isZoomed: args.isZoomed }
+                                        : h
+                                    ));
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Zoom del holograma actualizado." }
+                                };
+                            }
+
+                            if (call.name === "closeHologramDisplay") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.titleFragment) {
+                                    setHolograms(prev => prev.filter(h => 
+                                        !h.title.toLowerCase().includes(String(args.titleFragment).toLowerCase())
+                                    ));
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Holograma cerrado." }
+                                };
+                            }
+
+                            if (call.name === "toggleCamera") {
+                                const args = call.args as Record<string, any>;
+                                const enable = args.enable;
+                                if (enable) {
+                                     startCamera();
+                                } else {
+                                     stopCamera();
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: enable ? "Cámara encendida. Ahora puedes ver al usuario." : "Cámara apagada." }
+                                };
+                            }
+
+                            if (call.name === "moveHologramCore") {
+                                const args = call.args as Record<string, any>;
+                                if (args && args.action) {
+                                    setCoreAction(args.action);
+                                    setTimeout(() => setCoreAction(null), 2000); 
+                                }
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "Acción visual aplicada al núcleo." }
+                                };
+                            }
+
+                            if (call.name === "listGoogleDriveFiles" || call.name === "readGoogleSlidePresentation" || call.name === "modifyGoogleSlidePresentation") {
+                                return {
+                                    id: call.id,
+                                    name: call.name,
+                                    response: { result: "La API de Google Workspace no está vinculada en este momento." }
+                                };
+                            }
+
+                            return {
+                                id: call.id,
+                                name: call.name,
+                                response: { error: "Unknown tool" }
+                            };
+                        });
+                        
+                        Promise.all(responsesAndPromises).then(responses => {
+                            ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
+                        });
+                    }
+                }
             };
         });
       };
@@ -361,11 +577,19 @@ export function useJarvis() {
       sessionPromise.catch((err) => {
         console.error("Fallback Failed:", err);
         const msg = err instanceof Error ? err.message : String(err);
-        setSystemError(
-          "Initialization Failed",
-          msg.includes("unavailable") 
+        let errorTitle = "Initialization Failed";
+        let errorMsg = msg.includes("unavailable") 
                 ? "Service is temporarily unavailable. Please try again later." 
-                : "Could not initialize audio capture or connect to the Live API."
+                : "Could not initialize audio capture or connect to the Live API.";
+
+        if (msg.includes("Permission dismissed") || msg.includes("Permission denied") || msg.includes("NotAllowedError") || err instanceof DOMException && err.name === "NotAllowedError") {
+          errorTitle = "Microphone Permission Required";
+          errorMsg = "Please allow microphone access to use J.A.R.V.I.S. You may need to click the camera/microphone icon in your browser's address bar to unblock it.";
+        }
+        
+        setSystemError(
+          errorTitle,
+          errorMsg
         );
         cleanupAudio();
       });
@@ -373,11 +597,19 @@ export function useJarvis() {
     } catch (err) {
       console.error(err);
       const msg = err instanceof Error ? err.message : String(err);
-      setSystemError(
-        "Initialization Failed",
-        msg.includes("unavailable") 
+      let errorTitle = "Initialization Failed";
+      let errorMsg = msg.includes("unavailable") 
               ? "Service is temporarily unavailable. Please try again later." 
-              : "Could not initialize audio capture or connect to the Live API."
+              : "Could not initialize audio capture or connect to the Live API.";
+
+      if (msg.includes("Permission dismissed") || msg.includes("Permission denied") || msg.includes("NotAllowedError") || err instanceof DOMException && err.name === "NotAllowedError") {
+        errorTitle = "Microphone Permission Required";
+        errorMsg = "Please allow microphone access to use J.A.R.V.I.S. You may need to click the camera/microphone icon in your browser's address bar to unblock it.";
+      }
+      
+      setSystemError(
+        errorTitle,
+        errorMsg
       );
       cleanupAudio();
     }

@@ -1,5 +1,5 @@
 {
-  "name": "J.A.R.V.I.S.",
+  "name": "JARVIS Mark VII Core",
   "description": "A J.A.R.V.I.S. virtual assistant clone powered by Gemini Live API that listens to your voice and responds in real-time.",
   "requestFramePermissions": [
     "microphone",

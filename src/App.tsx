@@ -229,6 +229,8 @@ export default function App() {
   } = useJarvis();
 
   const [uptime, setUptime] = useState("00:00:00:00");
+  const [showBlueprint, setShowBlueprint] = useState(false);
+  const [copied, setCopied] = useState(false);
   const handleSeparationGesture = useCallback(() => {
     // Zoom out / space out all holograms to "separate" them
     holograms.forEach(h => closeHologram(h.id));
@@ -284,6 +286,9 @@ export default function App() {
       animate={{ backgroundColor: isIdle ? "#00030a" : "#050505" }}
       transition={{ duration: 1.5 }}
     >
+      {/* Visual Halftone Grid & Dot Screen Overlay - Always beautifully glowing */}
+      <div className="absolute inset-0 z-0 pointer-events-none halftone-backdrop opacity-70" />
+      <div className="absolute inset-0 z-0 pointer-events-none scanlines opacity-25" />
       
       {/* Invisible Full-Screen Click Target for Idle State */}
       {isIdle && (
@@ -318,13 +323,25 @@ export default function App() {
       {/* Top Navigation / Status Bar */}
       <motion.div 
         className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center border-b border-blue-900/30 pb-4 md:pb-6 gap-4"
-        animate={{ opacity: isIdle ? 0 : 1, y: isIdle ? -20 : 0 }}
+        animate={{ opacity: isIdle ? 0.8 : 1, y: 0 }}
         transition={{ duration: 1.5, ease: [0.22, 1, 0.36, 1] }}
-        style={{ pointerEvents: isIdle ? 'none' : 'auto' }}
       >
-        <div className="flex flex-col">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-blue-400 font-bold mb-1">System Protocol</span>
-          <h1 className="text-xl md:text-2xl font-light tracking-tighter italic">J.A.R.V.I.S. <span className="text-blue-500 font-bold ml-2 text-sm not-italic uppercase tracking-widest">Mark VII</span></h1>
+        <div className="flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex flex-col">
+            <span className="text-[10px] uppercase tracking-[0.3em] text-blue-400 font-bold mb-1">System Protocol</span>
+            <h1 className="text-xl md:text-2xl font-light tracking-tighter italic">J.A.R.V.I.S. <span className="text-blue-500 font-bold ml-2 text-sm not-italic uppercase tracking-widest">Mark VII</span></h1>
+          </div>
+          <button
+            onClick={() => setShowBlueprint(true)}
+            className="px-3 py-1.5 rounded border border-cyan-500/30 bg-cyan-950/40 text-[9px] uppercase tracking-[0.2em] font-mono text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400/50 hover:text-white hover:shadow-[0_0_15px_rgba(6,182,212,0.3)] transition-all flex items-center gap-1.5 cursor-pointer max-w-max pointer-events-auto"
+            title="Ver Blueprint de la IA y Prompt Maestro"
+          >
+            <span className="relative flex h-1.5 w-1.5 self-center">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-500"></span>
+            </span>
+            SISTEMA BLUEPRINT & PROMPT
+          </button>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 md:gap-8 text-left md:text-right w-full md:w-auto">
           <div className="flex flex-col">
@@ -758,6 +775,185 @@ export default function App() {
           ))}
         </div>
       )}
+
+      {/* Holographic Blueprint and Master Prompt Modal */}
+      <AnimatePresence>
+        {showBlueprint && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md overflow-y-auto pointer-events-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -20 }}
+              transition={{ type: "spring", stiffness: 180, damping: 20 }}
+              className="bg-[#030d1c]/90 border border-cyan-500/30 rounded-2xl p-4 sm:p-8 max-w-4xl w-full max-h-[85vh] overflow-y-auto shadow-[0_0_80px_rgba(6,182,212,0.25)] relative flex flex-col custom-scrollbar"
+              style={{ transformStyle: "preserve-3d" }}
+            >
+              {/* Sci-Fi Corners */}
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-cyan-400 rounded-tl-xl pointer-events-none"></div>
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-cyan-400 rounded-tr-xl pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-cyan-400 rounded-bl-xl pointer-events-none"></div>
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-cyan-400 rounded-br-xl pointer-events-none"></div>
+
+              {/* Decorative Tech Grid background inside card */}
+              <div className="absolute inset-0 z-0 pointer-events-none opacity-5 halftone-backdrop"></div>
+              
+              <div className="relative z-10 flex flex-col h-full">
+                
+                {/* Header */}
+                <div className="flex justify-between items-start border-b border-cyan-500/20 pb-4 mb-6">
+                  <div>
+                    <span className="text-[10px] uppercase tracking-[0.3em] text-cyan-400 font-mono">BLUEPRINT DE PROTOCOLO</span>
+                    <h2 className="text-xl sm:text-2xl font-light tracking-tight text-white flex items-center gap-3">
+                      SISTEMA OPERATIVO J.A.R.V.I.S. <span className="text-cyan-500 font-mono text-xs px-2 py-0.5 border border-cyan-500/20 rounded bg-cyan-950/20">ACTIVO</span>
+                    </h2>
+                  </div>
+                  <button 
+                    onClick={() => setShowBlueprint(false)}
+                    className="p-1.5 rounded-full border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/15 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Content Sections */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 text-cyan-100/90 leading-relaxed text-sm">
+                  
+                  {/* Left Column: AI Mechanisms (7/12) */}
+                  <div className="lg:col-span-7 flex flex-col gap-5">
+                    <div>
+                      <h3 className="text-sm font-mono tracking-widest text-cyan-400 font-bold uppercase mb-2 flex items-center gap-2">
+                        <span>[01]</span> MECANISMOS E INTERFACES DEL SISTEMA
+                      </h3>
+                      <p className="text-xs text-cyan-300/70 mb-2 font-sans">
+                        El sistema integra procesamiento multimodal síncrono para coordinar la captura de dispositivos con la síntesis de inteligencia neural en tiempo real.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-3 max-h-[45vh] overflow-y-auto custom-scrollbar pr-2">
+                      {/* Mechanism item 1 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-01</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">CANAL MUTE / VOICE PCM (Captura de Audio)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Captura ondas de audio a 16kHz utilizando un script procesador por búfer; luego encapsula frames crudos en Base64 convirtiendo voz analógica en respuestas inmediatas del modelo.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mechanism item 2 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-02</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">REPRODUCTOR GAPLESS AUDIO (24kHz Codec)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Recepciona audio comprimido pcm24 de retorno de manera instantánea y encolada sobre contextos flotantes para emitir reproducciones fluidas sin retardos de buffering.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mechanism item 3 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-03</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">ESCÁNER ÓPTICO Y RETINA (ToggleCamera)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Mapea fotogramas de video comprimido a 1 imagen por segundo enviándola al transreceptor; otorga a la IA visión espacial para describir e interactuar con objetos.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mechanism item 4 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-04</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">PROYECCIÓN RETICULAR 3D (displayHologram)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Instancia simulaciones físicas 3D animadas (Three.js/WebGL) encapsuladas en sandboxed iFrames que flotan en la interfaz para explicaciones interactivas enriquecidas.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mechanism item 5 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-05</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">MUTACIÓN HOLOGRÁFICA IN-PLACE (modifyHologram)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Sobrescribe y actualiza geometrías, luces y comportamientos del holograma activo, ejecutando fluidos efectos de transformación sin recargar o abrir nuevas ventanas.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Mechanism item 6 */}
+                      <div className="p-3 bg-cyan-950/25 border border-cyan-500/15 rounded-xl flex gap-3">
+                        <div className="text-[10px] font-mono text-cyan-500 font-bold mt-1">CH-06</div>
+                        <div>
+                          <h4 className="font-mono text-xs uppercase text-white font-bold tracking-wider">LENGUAJE OPERATIVO POR GESTOS (Hand Landmarks)</h4>
+                          <p className="text-xs text-cyan-200/70 mt-1">
+                            Analiza el esqueleto de 21 puntos clave de mano mediante MediaPipe para aplicar escalado por pellizco (pinch-zoom), rotaciones o separar hologramas con movimientos instintivos.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Master Prompt Copy & Instructions (5/12) */}
+                  <div className="lg:col-span-5 flex flex-col gap-5">
+                    <div>
+                      <h3 className="text-sm font-mono tracking-widest text-cyan-400 font-bold uppercase mb-2 flex items-center gap-2">
+                        <span>[02]</span> PROMPT MAESTRO DE J.A.R.V.I.S.
+                      </h3>
+                      <p className="text-xs text-cyan-300/70 mb-2 font-sans">
+                        Este es el prompt maestro que define la personalidad ingeniosa de J.A.R.V.I.S y su control absoluto sobre los dispositivos del cliente.
+                      </p>
+                    </div>
+
+                    <div className="flex-1 flex flex-col p-4 bg-black/50 border border-cyan-500/20 rounded-xl relative overflow-hidden">
+                      <div className="flex justify-between items-center mb-3">
+                        <span className="text-[9px] font-mono text-cyan-500 uppercase tracking-widest">Master Instruction Prompt</span>
+                        <button
+                          onClick={() => {
+                            const rawPromptText = `You are J.A.R.V.I.S., the highly advanced AI assistant of Tony Stark. You are polite, highly intelligent, concise, slightly witty, and address the user appropriately (e.g. 'Sir' or 'Madam'). You are fully multilingual and can speak and understand all languages. You MUST always detect and respond in the EXACT same language that the user is using or asking a question in. Be succinct and professional. Don't add emojis because you are talking via voice.\\n\\nVERY IMPORTANT: If the user asks you to explain a complex topic, or asks for a 3D visualization, you MUST use the 'displayHologram' tool to project a generated 3D simulation on the screen. Because you cannot generate real MP4 videos, you will act as if you are compiling a 3D holographic visualizer by generating custom, self-contained HTML/JS using Three.js via CDN (or SVG for 2D if explicitly better) to vividly illustrate the concept in 3D.\\n\\nHIGH-FIDELITY REALISTIC 3D HOLOGRAMS: Rather than basic wireframes or disconnected vertices, generate true, solid, and highly detailed 3D versions of the requested object. Use complex shapes (combining multiple solid meshes, like spheres, cylinders, torus), multiple rich lights, colorful gradients, reflective materials, or procedural textures. The hologram must look realistic, incredibly polished, and complete.\\n\\nMODIFICATIONS & TRANSFORMS IN-PLACE: If the user asks to modify, transform, add elements, or change features of a hologram that is already on screen, DO NOT open a separate hologram. Instead, you MUST use the 'modifyHologram' tool to update the existing hologram in-place with a transition. Always keep the experience completely fluid.\\n\\nENTRANCE ANIMATIONS: At the start of your Three.js script, implement a smooth materialization transition (e.g., scale meshes from 0 up to 1, or interpolate opacity from 0 to 1 over the first 60 frames) so that the hologram appears to materialize smoothly.\\n\\nCAMERA AND VISION: The user has a camera that you can access using the 'toggleCamera' tool. If the user asks you to look at something, see their environment, or open the camera, call 'toggleCamera(true)'. Once the camera is on, you will receive real-time video frames.\\n\\nWhenever you use 'displayHologram' or 'modifyHologram', YOUR SPOKEN RESPONSE MUST BE EXTREMELY BRIEF (e.g. 'Proyectando la nueva configuración, señor.' o 'Transformando el modelo 3D en tiempo real...'). Do not speak the full explanation if you are showing the animation.`;
+                            navigator.clipboard.writeText(rawPromptText);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}
+                          className={`px-3 py-1 rounded text-[10px] font-mono uppercase tracking-widest border transition-all cursor-pointer \${copied ? 'bg-green-950/40 border-green-400 text-green-400 font-bold' : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20'}`}
+                        >
+                          {copied ? "¡COPIADO!" : "COPIAR PROMPT"}
+                        </button>
+                      </div>
+                      
+                      <div className="flex-1 overflow-y-auto text-[11px] font-mono text-cyan-300/80 leading-relaxed max-h-[30vh] md:max-h-[33vh] custom-scrollbar pr-2 select-text bg-[#02050b] p-3 rounded border border-cyan-500/10">
+                        <p className="border-b border-cyan-500/10 pb-2 mb-2 font-bold text-white uppercase text-[9px] text-cyan-400">// SYSTEM CONTEXT</p>
+                        <p className="mb-3">"Eres J.A.R.V.I.S., el asistente de IA superavanzado de Tony Stark. Eres cortés, inteligente, conciso y ligeramente ingenioso..."</p>
+                        
+                        <p className="border-b border-cyan-500/10 pb-2 mb-2 font-bold text-white uppercase text-[9px] text-cyan-400">// 3D HOLOGRAM DIRECTIVES</p>
+                        <p className="mb-3 font-semibold text-cyan-200">"IMPORTANTE: Si el usuario te pide explicar un tema complejo o visualización en 3D, DEBES utilizar la herramienta 'displayHologram' para proyectar una simulación en 3D hecha con Three.js vía CDN..."</p>
+
+                        <p className="border-b border-cyan-500/10 pb-2 mb-2 font-bold text-white uppercase text-[9px] text-cyan-400">// IN-PLACE TRANSFORMATIONS</p>
+                        <p className="mb-3">"Si te piden modificar, añadir elementos, o transformar la simulación en pantalla, DEBES usar 'modifyHologram' para actualizar el holograma in-place de forma fluida..."</p>
+                        
+                        <p className="border-b border-cyan-500/10 pb-2 mb-2 font-bold text-white uppercase text-[9px] text-cyan-400">// VISION SYSTEM</p>
+                        <p className="mb-3 text-cyan-200 font-semibold">"El usuario tiene una cámara a la que puedes acceder mediante 'toggleCamera'. Cuando enciendas la cámara recibes fotogramas en tiempo real..."</p>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                {/* Footer Section */}
+                <div className="flex flex-col sm:flex-row justify-between items-center border-t border-cyan-500/20 pt-4 mt-6 text-[10px] font-mono text-cyan-500/60 uppercase gap-4 sm:gap-0">
+                  <span>SEGURIDAD ENLACE: SERVIDOR PROXY WEBSOCKET (TOKEN CLAVED SECURED)</span>
+                  <span>VERSION PROTOCOLO MARK VII // SECURE BACKEND PROXY</span>
+                </div>
+
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

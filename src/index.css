@@ -16,6 +16,7 @@
 
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   .custom-scrollbar::-webkit-scrollbar-track {
     background: rgba(30, 58, 138, 0.1); 
@@ -28,5 +29,27 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: rgba(59, 130, 246, 0.7); 
   }
+
+  /* Retro-futuristic Halftone Matrix Backdrop */
+  .halftone-backdrop {
+    background-image: radial-gradient(rgba(59, 130, 246, 0.16) 1.5px, transparent 1.6px);
+    background-size: 11px 11px;
+    mask-image: radial-gradient(circle at center, black 40%, rgba(0,0,0,0.2) 100%);
+  }
+
+  /* Scanline sweep animation overlay */
+  .scanlines {
+    background: linear-gradient(
+      rgba(18, 16, 16, 0) 50%, 
+      rgba(0, 0, 0, 0.25) 50%
+    ), linear-gradient(
+      90deg,
+      rgba(255, 0, 0, 0.04),
+      rgba(0, 255, 0, 0.01),
+      rgba(0, 0, 255, 0.04)
+    );
+    background-size: 100% 4px, 6px 100%;
+  }
 }
+
 
